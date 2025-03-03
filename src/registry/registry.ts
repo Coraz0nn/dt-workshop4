@@ -28,20 +28,25 @@ export async function launchRegistry() {
 
   // Route /registerNode pour enregistrer un nœud
   _registry.post("/registerNode", (req: Request, res: Response) => {
-    const { nodeId, pubKey } = req.body;
+    try {
+      const { nodeId, pubKey } = req.body;
 
-    if (typeof nodeId !== "number" || typeof pubKey !== "string") {
-      return res.status(400).json({ error: "Invalid request format" });
+      if (typeof nodeId !== "number" || typeof pubKey !== "string") {
+        return res.status(400).json({ error: "Invalid request format" });
+      }
+
+      // Vérifie si le nœud est déjà enregistré
+      if (registeredNodes.some(node => node.nodeId === nodeId)) {
+        return res.status(400).json({ error: "Node already registered" });
+      }
+
+      registeredNodes.push({ nodeId, pubKey });
+      console.log(`✅ Node ${nodeId} registered with public key: ${pubKey}`);
+      return res.status(200).json({ message: "Node registered successfully" });
+    } catch (error) {
+      console.error("❌ Error registering node:", error);
+      return res.status(500).json({ error: "Internal server error" });
     }
-
-    // Vérifie si le nœud est déjà enregistré
-    if (registeredNodes.some(node => node.nodeId === nodeId)) {
-      return res.status(400).json({ error: "Node already registered" });
-    }
-
-    registeredNodes.push({ nodeId, pubKey });
-    console.log(`✅ Node ${nodeId} registered with public key: ${pubKey}`);
-    res.status(200).json({ message: "Node registered successfully" });
   });
 
   // Route /getNodeRegistry pour récupérer la liste des nœuds enregistrés
@@ -55,3 +60,4 @@ export async function launchRegistry() {
 
   return server;
 }
+

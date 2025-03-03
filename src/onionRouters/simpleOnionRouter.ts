@@ -2,23 +2,21 @@ import bodyParser from "body-parser";
 import express, { Request, Response } from "express";
 import { BASE_ONION_ROUTER_PORT, REGISTRY_PORT } from "../config";
 import axios, { AxiosError } from "axios";
-import crypto from "crypto";
+import { generateRsaKeyPair, exportPubKey, exportPrvKey } from "../crypto";
 
 let lastReceivedEncryptedMessage: string | null = null;
 let lastReceivedDecryptedMessage: string | null = null;
 let lastMessageDestination: number | null = null;
 
 export async function simpleOnionRouter(nodeId: number) {
-  // Génération des clés RSA 2048 bits
-  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-  });
+  // Génération des clés RSA avec crypto.subtle
+  const { publicKey, privateKey } = await generateRsaKeyPair();
 
   // Conversion de la clé privée en base64 pour les tests
-  const privateKeyBase64 = privateKey.export({ type: "pkcs8", format: "pem" }).toString("base64");
+  const privateKeyBase64 = await exportPrvKey(privateKey);
 
-  // Conversion de la clé publique en string pour l'enregistrement
-  const publicKeyString = publicKey.export({ type: "spki", format: "pem" }).toString();
+  // Conversion de la clé publique en base64 pour l'enregistrement
+  const publicKeyBase64 = await exportPubKey(publicKey);
 
   const onionRouter = express();
   onionRouter.use(express.json());
@@ -42,8 +40,8 @@ export async function simpleOnionRouter(nodeId: number) {
     res.json({ result: lastMessageDestination });
   });
 
-  // Route pour récupérer la clé privée (uniquement pour les tests)
-  onionRouter.get("/getPrivateKey", (req: Request, res: Response) => {
+  // ✅ Route pour récupérer la clé privée (uniquement pour les tests)
+  onionRouter.get("/getPrivateKey", async (req: Request, res: Response) => {
     res.json({ result: privateKeyBase64 });
   });
 
@@ -51,11 +49,11 @@ export async function simpleOnionRouter(nodeId: number) {
   const server = onionRouter.listen(port, async () => {
     console.log(`Onion router ${nodeId} is listening on port ${port}`);
 
-    // Enregistrement du nœud avec sa clé publique sur le registre
+    // ✅ Enregistrement du nœud avec sa clé publique sur le registre
     try {
       await axios.post(`http://localhost:${REGISTRY_PORT}/registerNode`, {
         nodeId,
-        pubKey: publicKeyString,
+        pubKey: publicKeyBase64,
       });
       console.log(`✅ Node ${nodeId} successfully registered with registry.`);
     } catch (error) {
