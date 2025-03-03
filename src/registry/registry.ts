@@ -4,7 +4,12 @@ import { REGISTRY_PORT } from "../config";
 
 export type Node = { nodeId: number; pubKey: string };
 
-export type GetNodeRegistryResponse = {
+export type RegisterNodeBody = {
+  nodeId: number;
+  pubKey: string;
+};
+
+export type GetNodeRegistryBody = {
   nodes: Node[];
 };
 
@@ -41,10 +46,7 @@ export async function launchRegistry() {
 
   // Route /getNodeRegistry pour récupérer la liste des nœuds enregistrés
   _registry.get("/getNodeRegistry", (req: Request, res: Response) => {
-    const response: GetNodeRegistryResponse = {
-      nodes: registeredNodes
-    };
-    res.status(200).json(response);
+    res.status(200).json({ nodes: registeredNodes });
   });
 
   const server = _registry.listen(REGISTRY_PORT, () => {
@@ -53,4 +55,3 @@ export async function launchRegistry() {
 
   return server;
 }
-
