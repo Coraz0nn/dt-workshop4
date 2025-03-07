@@ -9,13 +9,13 @@ let lastReceivedDecryptedMessage: string | null = null;
 let lastMessageDestination: number | null = null;
 
 export async function simpleOnionRouter(nodeId: number) {
-  // Génération des clés RSA avec crypto.subtle
+  // Génération des clés RSA via notre fonction dans crypto.ts
   const { publicKey, privateKey } = await generateRsaKeyPair();
 
-  // Conversion de la clé privée en base64 pour les tests
+  // Export de la clé privée en Base64 (format brut)
   const privateKeyBase64 = await exportPrvKey(privateKey);
 
-  // Conversion de la clé publique en base64 pour l'enregistrement
+  // Export de la clé publique en Base64 (format brut)
   const publicKeyBase64 = await exportPubKey(publicKey);
 
   const onionRouter = express();
@@ -27,20 +27,18 @@ export async function simpleOnionRouter(nodeId: number) {
     res.send("live");
   });
 
-  // Routes pour récupérer les messages reçus et envoyés
+  // Routes pour récupérer les messages (initialement null)
   onionRouter.get("/getLastReceivedEncryptedMessage", (req: Request, res: Response) => {
     res.json({ result: lastReceivedEncryptedMessage });
   });
-
   onionRouter.get("/getLastReceivedDecryptedMessage", (req: Request, res: Response) => {
     res.json({ result: lastReceivedDecryptedMessage });
   });
-
   onionRouter.get("/getLastMessageDestination", (req: Request, res: Response) => {
     res.json({ result: lastMessageDestination });
   });
 
-  // ✅ Route pour récupérer la clé privée (uniquement pour les tests)
+  // Route pour récupérer la clé privée (pour les tests)
   onionRouter.get("/getPrivateKey", async (req: Request, res: Response) => {
     res.json({ result: privateKeyBase64 });
   });
@@ -49,7 +47,7 @@ export async function simpleOnionRouter(nodeId: number) {
   const server = onionRouter.listen(port, async () => {
     console.log(`Onion router ${nodeId} is listening on port ${port}`);
 
-    // ✅ Enregistrement du nœud avec sa clé publique sur le registre
+    // Enregistrement automatique du nœud dans le registre
     try {
       await axios.post(`http://localhost:${REGISTRY_PORT}/registerNode`, {
         nodeId,
