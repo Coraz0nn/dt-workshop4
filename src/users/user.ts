@@ -22,12 +22,9 @@ export async function user(userId: number) {
   let lastSentMessage: string | null = null;
   let lastCircuit: number[] | null = null;
 
-  // Route /status
   _user.get("/status", (req, res) => {
     res.send("live");
   });
-
-  // Routes GET pour récupérer les messages et le circuit
   _user.get("/getLastReceivedMessage", (req, res) => {
     res.json({ result: lastReceivedMessage });
   });
@@ -38,61 +35,57 @@ export async function user(userId: number) {
     res.json({ result: lastCircuit });
   });
 
-  // Route POST /message pour recevoir un message
-  // Cette route renvoie "success" (texte brut) pour satisfaire le test
+  // Lorsqu'un utilisateur reçoit un message, on retire le préfixe de 10 chiffres (s'il existe)
   _user.post("/message", (req, res) => {
-    const { message } = req.body;
+    let { message } = req.body;
+    if (message && message.length >= 10 && /^\d{10}/.test(message)) {
+      message = message.slice(10);
+    }
     lastReceivedMessage = message;
     res.send("success");
   });
 
-  // Route POST /sendMessage pour envoyer un message à travers le réseau onion
   _user.post("/sendMessage", async (req, res) => {
     try {
       const { message, destinationUserId } = req.body as SendMessageBody;
       lastSentMessage = message;
-
-      // Récupération du registre des nœuds
+      
       const registryResponse = await fetch(`http://localhost:${REGISTRY_PORT}/getNodeRegistry`);
       interface NodeRegistry {
         nodes: { nodeId: number; pubKey: string }[];
       }
       const registryData = (await registryResponse.json()) as NodeRegistry;
       const nodes = registryData.nodes;
-      
       if (nodes.length < 3) {
         throw new Error("Not enough nodes in the registry");
       }
-      // Sélection aléatoire de 3 nœuds distincts
       nodes.sort(() => Math.random() - 0.5);
       const circuit = nodes.slice(0, 3);
-      lastCircuit = circuit.map((n) => BASE_ONION_ROUTER_PORT + n.nodeId);
+      // Stocke simplement les nodeId dans le circuit
+      lastCircuit = circuit.map(n => n.nodeId);
 
-      // Destination finale pour l'utilisateur destinataire (codée sur 10 caractères)
+      // La destination finale pour l'utilisateur est le port complet: BASE_USER_PORT + destinationUserId
       const finalDest = (BASE_USER_PORT + destinationUserId).toString().padStart(10, "0");
-      // Payload initial = destination finale + message
+      // Payload initial : destination finale + message
       let payload = finalDest + message;
 
-      // Construction des couches d'encryption (en partant du dernier nœud jusqu'au premier)
+      // Construction des couches d'encryption : du dernier nœud vers le premier
       for (let i = circuit.length - 1; i >= 0; i--) {
         let nextHop: string;
         if (i === circuit.length - 1) {
           nextHop = finalDest;
         } else {
-          nextHop = (BASE_ONION_ROUTER_PORT + circuit[i + 1].nodeId)
-            .toString()
-            .padStart(10, "0");
+          // IMPORTANT : pour les couches intermédiaires, utiliser le port complet du prochain nœud.
+          nextHop = (BASE_ONION_ROUTER_PORT + circuit[i + 1].nodeId).toString().padStart(10, "0");
         }
         const messageToEncrypt = nextHop + payload;
         const symKey = await createRandomSymmetricKey();
         const symKeyExported = await exportSymKey(symKey);
         const encryptedLayer = await symEncrypt(symKey, messageToEncrypt);
         const encryptedSymKey = await rsaEncrypt(symKeyExported, circuit[i].pubKey);
-        // La nouvelle couche est la concaténation de l'encryption RSA de la clé symétrique et de l'encryption symétrique
         payload = encryptedSymKey + encryptedLayer;
       }
 
-      // Envoi du payload final au nœud d'entrée du circuit
       const entryNodePort = BASE_ONION_ROUTER_PORT + circuit[0].nodeId;
       await fetch(`http://localhost:${entryNodePort}/message`, {
         method: "POST",
@@ -112,3 +105,13 @@ export async function user(userId: number) {
 
   return server;
 }
+
+
+
+
+
+
+
+
+
+

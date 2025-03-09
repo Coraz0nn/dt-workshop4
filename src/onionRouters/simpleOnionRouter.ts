@@ -1,6 +1,6 @@
 import bodyParser from "body-parser";
 import express from "express";
-import { BASE_ONION_ROUTER_PORT, REGISTRY_PORT } from "../config";
+import { BASE_ONION_ROUTER_PORT, BASE_USER_PORT, REGISTRY_PORT } from "../config";
 import {
   generateRsaKeyPair,
   exportPubKey,
@@ -18,12 +18,10 @@ export async function simpleOnionRouter(nodeId: number) {
   let lastReceivedDecryptedMessage: string | null = null;
   let lastMessageDestination: number | null = null;
 
-  // Génération de la paire de clés RSA pour ce nœud
   const { publicKey, privateKey } = await generateRsaKeyPair();
   const exportedPubKey = await exportPubKey(publicKey);
   const exportedPrvKey = await exportPrvKey(privateKey);
 
-  // Enregistrement du nœud dans le registre
   await fetch(`http://localhost:${REGISTRY_PORT}/registerNode`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -42,8 +40,6 @@ export async function simpleOnionRouter(nodeId: number) {
   onionRouter.get("/getLastMessageDestination", (req, res) => {
     res.json({ result: lastMessageDestination });
   });
-
-  // Retourne directement la clé privée (déjà en Base64)
   onionRouter.get("/getPrivateKey", (req, res) => {
     res.json({ result: exportedPrvKey });
   });
@@ -52,20 +48,27 @@ export async function simpleOnionRouter(nodeId: number) {
     try {
       const { message } = req.body;
       lastReceivedEncryptedMessage = message;
-      const rsaEncKeyLength = 344; // taille fixe attendue pour la partie RSA
+
+      const rsaEncKeyLength = 344;
       const encryptedSymKey = message.slice(0, rsaEncKeyLength);
       const encryptedPayload = message.slice(rsaEncKeyLength);
+
       const symKeyExported = await rsaDecrypt(encryptedSymKey, privateKey);
       const decryptedLayer = await symDecrypt(symKeyExported, encryptedPayload);
       lastReceivedDecryptedMessage = decryptedLayer;
+
       const destStr = decryptedLayer.slice(0, 10);
+      const rawDest = parseInt(destStr, 10);
+      lastMessageDestination = rawDest < 1000 ? BASE_ONION_ROUTER_PORT + rawDest : rawDest;
       const nextPayload = decryptedLayer.slice(10);
-      lastMessageDestination = parseInt(destStr, 10);
-      if (nextPayload) {
+
+      if (nextPayload.length > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Forwarder le message complet pour que le prochain nœud puisse extraire son préfixe
         await fetch(`http://localhost:${lastMessageDestination}/message`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: nextPayload }),
+          body: JSON.stringify({ message: decryptedLayer }),
         });
       }
       res.json({ result: "Message processed" });
@@ -76,10 +79,11 @@ export async function simpleOnionRouter(nodeId: number) {
   });
 
   const server = onionRouter.listen(BASE_ONION_ROUTER_PORT + nodeId, () => {
-    console.log(
-      `Onion router ${nodeId} is listening on port ${BASE_ONION_ROUTER_PORT + nodeId}`
-    );
+    console.log(`Onion router ${nodeId} is listening on port ${BASE_ONION_ROUTER_PORT + nodeId}`);
   });
 
   return server;
 }
+
+
+
